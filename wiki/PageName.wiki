@@ -1,4 +1,5 @@
 #summary 68000 developments
+#labels m68k,68000,uClinux,bootloader,verilog
 
 = Introduction =
 
@@ -17,8 +18,9 @@ Future contents:
 
 = Videos made by me =
 
-http://www.youtube.com/watch?v=GJmPS3jMwD4
-http://www.youtube.com/watch?v=hgWZDSXkC58
+ http://www.youtube.com/watch?v=GJmPS3jMwD4
+
+ http://www.youtube.com/watch?v=hgWZDSXkC58
 
 
 = Blog =
