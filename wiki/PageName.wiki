@@ -1,0 +1,26 @@
+#summary 68000 developments
+
+= Introduction =
+
+Motorola MC68000 developments.
+
+Contents at the moment:
+ - Bootloader
+
+Future contents:
+ - uClinux patches
+ - Verilog code used in the board
+ - Schematics and PCB.
+
+
+
+
+= Videos made by me =
+
+http://www.youtube.com/watch?v=GJmPS3jMwD4
+http://www.youtube.com/watch?v=hgWZDSXkC58
+
+
+= Blog =
+
+http://mc68k.blogspot.com/
