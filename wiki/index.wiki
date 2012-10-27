@@ -6,12 +6,12 @@
 Motorola MC68000 developments.
 
 Contents at the moment:
- - Bootloader 0v2
- - Verilog code used in the board
- - Schematics and PCB
+ * Bootloader 0v2
+ * Verilog code used in the board
+ * Schematics and PCB
 
 Future contents:
- - uClinux patches
+ * uClinux patches
 
 
 
