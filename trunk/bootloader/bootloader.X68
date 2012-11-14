@@ -16,6 +16,9 @@
 *                      4 Mb Flash (AM29F800B) from 0x800000 - 0xBFFFFF
 *                      FTDI position at 0xF00000
 *
+* 2012.11.13, lajlves, added auto-programming FPGA at boot time
+*                      added option to boot directly from FLASH base addr
+*
 *-----------------------------------------------------------
 
 FLASH_START	EQU $800000
@@ -58,7 +61,7 @@ FPGA_BITSIZE	EQU 22268
 * FPGA config
 * 7 6 5 4 3 2 1 0
 *             | \- Load FPGA on startup
-*             \--- FLASH has FPGA configuration
+*             \--- FLASH has FPGA configuration (not used)
 FPGA_CONFIG	EQU $80FFFE
 
 
@@ -124,16 +127,36 @@ main_start:
 *	wait around 3 sec for a key press
 	move.l	#DELAY,D0
 	lea	FTDI_STAT,A0
+	lea	FTDI_DATA,A1
+
 waitboot:
 	move.b	(A0),D1
 	btst	#0, D1
+	bne	key_wait
+	
+	move.b	(A1),D1
+	cmpi.b	#' ',D1
 	beq	loader
-
+	
+	
+key_wait:
 	sub.l	#1,D0
 	bne	waitboot
 
 *	No key pressed
-*	Start program in flash
+
+	* check fpga autoload bit
+	move.w	FPGA_CONFIG,D0
+	btst	#0,D0
+	bne	no_fpga_autoload
+
+	lea	FCHIP1,A1
+	adda.l	#FSA3,A1
+	bsr	program_fpga
+
+no_fpga_autoload:
+
+*	Start program in flash or last loaded program from ram
 	lea	boot_message2,A0
 	bsr	printstr
 	
@@ -194,20 +217,26 @@ loader:
 	beq	_load_fpga
 
 	cmp.b	#'8',D0
-	beq	_test_ram
+	beq	_set_autoload_fpga
 
 	cmp.b	#'9',D0
 	beq	_tutor
+
+	cmp.b	#'a',D0
+	beq	_run_flash
 	
 	bra	loader
 
 
-_tutor
+_tutor:
 	jmp	$804000
 
+_run_flash:
+	clr.l	MAGIC
+	jmp	$810000
 
-_test_ram:
-	bsr	test_ram
+_set_autoload_fpga:
+	bsr	set_autoload_fpga
 	bra	loader
 
 _load_fpga:
@@ -910,39 +939,74 @@ printstr1:
 
 
 
-test_ram:
-	lea	testram_msg,A0
+set_autoload_fpga:
+
+	lea	bitset_msg,A0
 	bsr	printstr
 	
-	* check ram size
-	move.w	#$AAAA,D0
-	move.w	#$5555,D4
+	move.w	FPGA_CONFIG,D0
 	
-	move.l	#$100000,D2
-	lea	$0,A0
+	btst	#0,D0
+	beq	set_autoload_fpga_1
 	
-	* D1 will have the amount of 1MB blocks
-	clr.l	D1
-	
-	* start
-_find_size:
-	move.w	D0,(A0)
-	move.w	D4,2(A0)
-	move.w	(A0),D3
-	cmp.w	D0,D3
-	bne	_size_found
-	adda.l	D2,A0
-	addi.b	#1,D1	
-	bra	_find_size
-_size_found:
 
-	move.l	D1,D0
-	bra	PRINT_DEC
+	* unlock addresses in A4 and A5
+	move.l	#FPGA_CONFIG,D0
+	movea.l	D0,A1
+	
+	andi.l	#$F00000,D0
+	
+	lea	$554,A4
+	lea	$AAA,A5
+	adda.l	D0,A4
+	adda.l	D0,A5
+	
 
-	lea	testram_msg1,A0
+	* clear bit 0
+	move.w	#$FFFE,D0
+	
+	
+	* run the write code from ram
+	lea	$1000,A6
+	lea	set_autoload_fpga_wrcodestart,A2
+	lea	set_autoload_fpga_wrcodeend,A3
+set_autoload_fpga_copycode:	
+	move.w	(A2)+,(A6)+
+	cmpa.l	A2,A3
+	bne	set_autoload_fpga_copycode
+	
+	lea	$1000,A0
+	jsr	(A0)
+
+	* skip already executed code
+	bra	set_autoload_fpga_wrcodeend
+
+
+	
+set_autoload_fpga_wrcodestart:
+	* unlock cycle
+	move.w	#$00AA,(A5)
+	move.w	#$0055,(A4)
+	move.w	#$00A0,(A5)
+	move.w	D0,(A1)
+
+
+	andi.w	#$0080,D0
+set_autoload_fpga2:
+	move.w	(A1),D1
+	andi.w	#$0080,D1
+	cmp.w	D0,D1
+	bne	set_autoload_fpga2
+
+
+set_autoload_fpga_wrcodeend
+
+	lea	done_msg,A0
 	bsr	printstr
-		
-
+	rts
+set_autoload_fpga_1:	
+	lea	bitset_msg1,A0
+	bsr	printstr
 	rts
 
 
@@ -951,7 +1015,7 @@ _size_found:
 
 *************************************************************
 ** ERASE FLASH COMAND
-** Always run from RAM to avoid lockups (erase flash chip
+** Always run in RAM to avoid lockups (erase flash chip
 ** where bootloader resides)
 *************************************************************
 erase_flash:
@@ -1467,18 +1531,15 @@ get_sector_done:
 
 
 
+done_msg	dc.b	10,13,'Done!',10,13,0
 
-
-boot_message1	dc.b	10,13,'Alcetronics M68K v0.2 (2012)',10,13,'Booting in 3...',10,13,0
+boot_message1	dc.b	10,13,'Alcetronics M68K v0.3 (2012)',10,13,'Booting in 3...',10,13,0
 boot_message2	dc.b	'Booting...',10,13,0
-
 
 fpgapgm_msg	dc.b	10,13,'FPGA bitstream sent.',10,13,0
 
-testram_msg	dc.b	10,13,' ** RAM test **',10,13,'Determining RAM size... ',0
-testram_msg1	dc.b	' Megabytes.',10,13,0
-testram_msg2	dc.b	'Testing ',10,13,0
-
+bitset_msg	dc.b	10,13,'Setting FPGA autoload bit.',10,13,0
+bitset_msg1	dc.b	10,13,'Autoload bit already set!',10,13,0
 
 erase_msg	dc.b	10,13,'Select FLASH chip [1-4]',0
 erase_msg1	dc.b	10,13,'Select FLASH sector:',10,13
@@ -1536,10 +1597,13 @@ menu_msg	dc.b	10,13,10,13,'-----------------------------'
 		dc.b	10,13,'FPGA options'
 		dc.b	10,13,' 5 - Load S-Record to FPGA'
 		dc.b	10,13,' 6 - Load S-Record to FLASH'
-		dc.b	10,13,' 7 - Program with FLASH contents',10,13
+		dc.b	10,13,' 7 - Program with FLASH contents'
+		dc.b	10,13,' 8 - Set FPGA autoload bit',10,13
 		dc.b	10,13,'Utilities'
-		dc.b	10,13,' 8 - Test RAM'
-		dc.b	10,13,' 9 - Tutor'
+		dc.b	10,13,' 9 - Boot Tutor @ 0x804000'
+		dc.b	10,13,' a - Boot Flash @ 0x810000'
+		
+		
 		dc.b	10,13,10,13,'?',0
 
 
@@ -1563,6 +1627,7 @@ FLASH_START_:
 	
 
 	END	START
+
 
 
 
