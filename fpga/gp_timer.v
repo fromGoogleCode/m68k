@@ -1,25 +1,24 @@
+`timescale 1ns / 1ps
+
 /*
-   Periodic 24-bit timer module
+   Periodic 16-bit timer module
    Author: ljalvs@gmail.com
    
    This module provides a periodic timer controller.
 
-   Address mapping
-   BASE_ADDR+0 - control: (IF),X,X,X,X,X,X,EN
-   BASE_ADDR+1 - counter[2]
-   BASE_ADDR+2 - counter[1]
-   BASE_ADDR+3 - counter[0]
-   BASE_ADDR+4 -
-   BASE_ADDR+5 - current value[2]
-   BASE_ADDR+6 - current value[1]
-   BASE_ADDR+7 - current value[0]
-   
-   (n) - Read only bit
-   
+   Address mapping in bus_ctrl.v
+   BASE_ADDR+0 - reload value[1]
+   BASE_ADDR+1 - reload value[0]
+   BASE_ADDR+2 - current value[1]
+   BASE_ADDR+3 - current value[0]
+
    To reset the interrupt flag, a write to the control
    reg is required.
    
    2012.05.08, ljalvs@gmail.com, Created.
+	2012.11.14, ljalvs@gmail.com, Modified to from 24-bit to 16-bit.
+                                 24-bit counter was overkill and
+											was wasting fpga CLBs
 
 */
 
@@ -30,29 +29,24 @@ module gp_timer(
 	input wire rst_n,
 	
 	// to bus_ctrl
-	input wire [23:0] preset,
-	output wire [23:0] value,
-	input wire [7:0] ctrl_in,
-	output wire [7:0] ctrl_out,
+	input wire [15:0] preset,
+	output wire [15:0] value,
+	input wire en,
 	input wire rst_int_n,
 	
 	// module specific
 	output reg int_n
 
-
-
-
 );
 
-	reg [23:0] counter;
-	wire [23:0] n_counter;
-	assign n_counter = counter[23:0] + 24'h1;
-
+	reg [15:0] counter;
+	wire [15:0] n_counter;
+	assign n_counter = counter[15:0] + 16'h1;
 	assign value = counter;
 	
-	wire en = ctrl_in[0];
+	/*wire en = ctrl_in[0];*/
 	
-	assign ctrl_out = {~int_n, ctrl_in[6:0]};
+	/*assign ctrl_out = {~int_n, ctrl_in[6:0]};*/
 	
 	always @(posedge tclk)
 		if (en) begin
@@ -63,7 +57,6 @@ module gp_timer(
 		end else begin
 			counter <= preset;
 		end
-
 		
 	always @(negedge clk or negedge rst_n)
 		if (!rst_n) begin

@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 module intr_ctrl(
 	// system
 	input wire clk,
@@ -16,24 +18,26 @@ module intr_ctrl(
 
 	input wire [15:0] ctrl_in,
 	output wire [15:0] ctrl_out,
-	
+
 	// interrupt sources
 	input wire int7_n,
 	input wire timer0_int_n,
-	input wire timer1_int_n,
+	//input wire timer1_int_n,
 	input wire rtc_int_n,
 	input wire eth_int_n,
 
 
 	// for ftdi interrupt generator
 	input wire ftdi_rxf,
-	input wire ftdi_txe
+	input wire ftdi_txe,
+	
+	input wire uart_int_n
 
 );
 
 
 
-	wire ftdi_ien, ftdi_rxie, ftdi_txie, eth_ien;
+	wire ftdi_ien, ftdi_rxie, ftdi_txie, eth_ien, uart_ien;
 
 	// control register assigns
 	// ftdi
@@ -43,7 +47,7 @@ module intr_ctrl(
 	// eth
 	assign eth_ien   = ctrl_in[3];
 	
-	
+	assign uart_ien = ctrl_in[4];
 	
 	assign ctrl_out = ctrl_in;
 	
@@ -56,16 +60,19 @@ module intr_ctrl(
 
 	wire eth_int_n_e;
 	assign eth_int_n_e = ~(~eth_int_n & eth_ien);
+
+	wire uart_int_n_e;
+	assign uart_int_n_e = ~(~uart_int_n & uart_ien);
 	
 
 	wire [7:1] int_level;
 
-	assign int_level[1] = ~timer0_int_n | ~timer1_int_n;
-	assign int_level[2] = ~rtc_int_n;
+	assign int_level[1] = 0;//~timer1_int_n;
+	assign int_level[2] = 0;
 	assign int_level[3] = ~ftdi_int_n;
-	assign int_level[4] = 0;
+	assign int_level[4] = ~uart_int_n_e;
 	assign int_level[5] = ~eth_int_n_e;
-	assign int_level[6] = 0;
+	assign int_level[6] = ~timer0_int_n | ~rtc_int_n;
 	assign int_level[7] = ~int7_n;
 	
 	
@@ -110,11 +117,13 @@ module intr_ctrl(
 	// interrupt table (priority ordered)
 	// vector = 00 will trigger autovector
 	assign intr_vector = ~int7_n       ? 8'h00 : (
-						 ~eth_int_n_e    ? 8'h51 : (
+						 ~timer0_int_n ? 8'h40 : (
 						 ~rtc_int_n    ? 8'h50 : (
-						 ~ftdi_int_n   ? 8'h44 : (
-						 ~timer1_int_n ? 8'h41 : (
-						 ~timer0_int_n ? 8'h40 : 8'h00 )))));
+						 ~eth_int_n_e  ? 8'h51 : (
+						 ~uart_int_n_e ? 8'h52 : (
+						 ~ftdi_int_n   ? 8'h44 : /*(
+						 ~timer1_int_n ? 8'h41 : */
+						 8'h00 ))))); //);
 
 	parameter IDLE = 2'b00;
 	parameter AVEC_INT = 2'b01;
