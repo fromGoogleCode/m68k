@@ -49,7 +49,7 @@ module top(
 	output wire rtc_as,
 	input wire rtc_int_n,
 	inout wire [7:0] rtc_ad,
-	
+
 	
 	// ftdi interface
 	input wire ftdi_txe,
@@ -93,15 +93,17 @@ module top(
 	inout wire sda,
 	output wire sck,
 	
-
+	// UART interface
+	input wire uart_rx,
+	output wire uart_tx,
 
 	// General Purpose PINS (available in the connector)
 	// general purpose clock 
 	output wire gp_clk,
 	// general purpose IO1
-	output wire [17:0] gpio1,
+	output wire [17:1] gpio1,
 	// general purpose IO1 3.3V
-	output wire [4:0] gpio1_3v3,
+	output wire [4:1] gpio1_3v3,
 	// general purpose IO2
 	output wire [15:0] gpio2
 	);
@@ -137,16 +139,17 @@ module top(
 	wire intr_dtack_n, intr_vpa_n;
 		
 	// timer0 wires
-	wire [23:0] t0_preset, t0_value;
-	wire [7:0] t0_ctrl_in, t0_ctrl_out;
+	wire [15:0] t0_preset, t0_value;
+	/*wire [7:0] t0_ctrl_in, t0_ctrl_out;*/
+	wire t0_en;
 	wire t0_rst_int_n;
 	wire t0_int_n;
 
 	// timer1 wires
-	wire [23:0] t1_preset, t1_value;
+	/*wire [23:0] t1_preset, t1_value;
 	wire [7:0] t1_ctrl_in, t1_ctrl_out;
 	wire t1_rst_int_n;
-	wire t1_int_n;
+	wire t1_int_n;*/
 
 	// rtc wires
 	wire [15:0] rtc_dout, rtc_din;
@@ -164,6 +167,15 @@ module top(
 	wire [15:0] adc_dout, adc_din;
 	wire adc_wrh_n;
 	
+	//UART wires
+	wire [7:0] uart_din, uart_dout;
+	wire [7:0] uart_ctrlin, uart_ctrlout;
+	wire uart_wrh_n, uart_rdh_n;
+	wire uart_int_n;
+
+
+	wire [7:0] pcr_ctrl;
+	assign t0_en = pcr_ctrl[0];
 	
 	bus_ctrl I0_bus_ctrl(
 		.clk(cpuclk),
@@ -188,19 +200,21 @@ module top(
 		.intr_vpa_n(intr_vpa_n),
 		.intr_dtack_n(intr_dtack_n),
 		
+		.pcr_ctrl(pcr_ctrl),
+
 		// timer0
 		.timer0_preset(t0_preset),
 		.timer0_value(t0_value),
-		.timer0_ctrl_in(t0_ctrl_in),
-		.timer0_ctrl_out(t0_ctrl_out),
+		/*.timer0_ctrl_in(t0_ctrl_in),
+		.timer0_ctrl_out(t0_ctrl_out),*/
 		.timer0_rst_int_n(t0_rst_int_n),
 		
 		// timer1
-		.timer1_preset(t1_preset),
+		/*.timer1_preset(t1_preset),
 		.timer1_value(t1_value),
 		.timer1_ctrl_in(t1_ctrl_in),
 		.timer1_ctrl_out(t1_ctrl_out),
-		.timer1_rst_int_n(t1_rst_int_n),
+		.timer1_rst_int_n(t1_rst_int_n),*/
 		
 		// DS12887 RTC
 		.rtc_datain(rtc_din),
@@ -210,6 +224,7 @@ module top(
 		.rtc_wrh_n(rtc_wrh_n),
 		.rtc_wrl_n(rtc_wrl_n),
 		.rtc_dtack_n(rtc_dtack_n),
+
 		
 		// ENC28J60 spi
 		.eth_datain(eth_din),
@@ -224,7 +239,16 @@ module top(
 		// ADC spi
 		.adc_datain(adc_din),
 		.adc_dataout(adc_dout),
-		.adc_wrh_n(adc_wrh_n)
+		.adc_wrh_n(adc_wrh_n),
+		
+		// UART controller
+		.uart_datain(uart_din),
+		.uart_dataout(uart_dout),
+		.uart_ctrlin(uart_ctrlin),
+		.uart_ctrlout(uart_ctrlout),
+		.uart_wrh_n(uart_wrh_n),
+		.uart_rdh_n(uart_rdh_n)
+		
 		
 	);
 
@@ -246,12 +270,14 @@ module top(
 		
 		.int7_n(int7_n),
 		.timer0_int_n(t0_int_n),
-		.timer1_int_n(t1_int_n),
+		//.timer1_int_n(t1_int_n),
 		.rtc_int_n(rtc_int_n),
 		.eth_int_n(eth_int_n),
 
 		.ftdi_rxf(ftdi_rxf),
-		.ftdi_txe(ftdi_txe)
+		.ftdi_txe(ftdi_txe),
+		
+		.uart_int_n(uart_int_n)
 	);
 
 	
@@ -264,15 +290,16 @@ module top(
 		// from bus controller
 		.preset(t0_preset),
 		.value(t0_value),
-		.ctrl_in(t0_ctrl_in),
-		.ctrl_out(t0_ctrl_out),
+		/*.ctrl_in(t0_ctrl_in),
+		.ctrl_out(t0_ctrl_out),*/
+		.en(t0_en),
 		.rst_int_n(t0_rst_int_n),
 		
 		.int_n(t0_int_n)
 	);
 
 	// general purpose timer1
-	gp_timer I1_gp_timer(
+	/*gp_timer I1_gp_timer(
 		.clk(cpuclk),
 		.tclk(clk1),
 		.rst_n(rst_n),
@@ -285,7 +312,7 @@ module top(
 		.rst_int_n(t1_rst_int_n),
 		
 		.int_n(t1_int_n)
-	);
+	);*/
 
 	// DS12887 RTC
 	rtc_ctrl I0_rtc_ctrl(
@@ -309,7 +336,7 @@ module top(
 		.cs_n(rtc_cs_n),
 		.as(rtc_as)
 	);
-	
+
 	spi_ctrl I0_enc28j60(
 		.clk(mclk),
 		.rst_n(rst_n),
@@ -357,12 +384,39 @@ module top(
 		.cs_n(adc_cs_n),
 		.sclk(adc_sclk)
 	);
+
+	uart_ctrl I0_uart(
+		.sysclk(mclk),
+		.clk(cpuclk),
+		.rst_n(rst_n),
+		
+		.tx_data(uart_din),
+		.rx_data(uart_dout),
+		
+		.ctrl_in(uart_ctrlin),
+		.ctrl_out(uart_ctrlout),
+		
+		.data_wrh_n(uart_wrh_n),
+		.data_rdh_n(uart_rdh_n),
+		
+		.rx(uart_rx),
+		.tx(uart_tx),
+		
+		.uart_int_n(uart_int_n)
+
+	);
+
 	
 	// SD card busy LED tied to busy status bit
-	assign sd_busy_n = eth_int_n; //t0_int_n;//~eth_dout[7];
+	assign sd_busy_n = sd_cs_n; //uart_int_n;
 	
-	assign gpio1[0] = t0_int_n;
-	assign gpio1[1] = rtc_rdh_n;
-	assign gpio1[2] = rtc_dtack_n;
+	/*assign gpio1[1] = rtc_rdh_n;
+	assign gpio1[2] = rtc_dtack_n;*/
+	assign gpio1[2] = t0_int_n;
+	/*assign gpio1[8] = uart_rdh_n;
+	assign gpio1[4] = uart_rdl_n;
+	assign gpio1[6] = uart_int_n;*/
+
+	//assign gpio1[4] = ovr;
 	
 endmodule

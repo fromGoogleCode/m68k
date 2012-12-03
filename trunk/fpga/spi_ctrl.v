@@ -1,3 +1,4 @@
+`timescale 1ns / 1ps
 /*
    SPI controller module
    Author: ljalvs@gmail.com

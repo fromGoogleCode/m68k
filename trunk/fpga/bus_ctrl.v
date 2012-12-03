@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 module bus_ctrl(
 
 	input wire clk,
@@ -31,21 +33,23 @@ module bus_ctrl(
 	inout wire [15:0] cpu_databus,
 	input wire [2:0] cpu_fc,
 	
-	
+	// global peripheral control register
+	output reg [7:0] pcr_ctrl,
+	//input wire [7:0] pcr_status,
 
 	// timer0
-	output reg [23:0] timer0_preset,
-	input wire [23:0] timer0_value,
-	output reg [7:0] timer0_ctrl_in,
-	input wire [7:0] timer0_ctrl_out,
+	output reg [15:0] timer0_preset,
+	input wire [15:0] timer0_value,
+	/*output reg [7:0] timer0_ctrl_in,
+	input wire [7:0] timer0_ctrl_out,*/
 	output wire timer0_rst_int_n,
 
 	// timer1
-	output reg [23:0] timer1_preset,
+	/*output reg [23:0] timer1_preset,
 	input wire [23:0] timer1_value,
 	output reg [7:0] timer1_ctrl_in,
 	input wire [7:0] timer1_ctrl_out,
-	output wire timer1_rst_int_n,
+	output wire timer1_rst_int_n,*/
 	
 	// DS12887 RTC
 	output reg [15:0] rtc_datain,
@@ -69,7 +73,18 @@ module bus_ctrl(
 	// ADC
 	output reg [15:0] adc_datain,
 	input wire [15:0] adc_dataout,
-	output wire adc_wrh_n
+	output wire adc_wrh_n,
+
+
+	// UART
+	output reg [7:0] uart_datain,
+	input wire [7:0] uart_dataout,
+	output reg [7:0] uart_ctrlin,
+	input wire [7:0] uart_ctrlout,
+	
+	output wire uart_wrh_n,
+	output wire uart_rdh_n,
+	output wire uart_rdl_n
 	
 );
 
@@ -105,8 +120,9 @@ module bus_ctrl(
 	assign as_n = fpga_busmaster ? as_n_r : 1'bz;
 	assign as_n = 1'bz;
 
-	reg [23:1] cpu_addrbus_out;
-	assign cpu_addrbus = fpga_busmaster ? cpu_addrbus_out : 23'bzzzzzzzzzzzzzzzzzzzzzzz;
+	//reg [23:1] cpu_addrbus_out;
+	//assign cpu_addrbus = fpga_busmaster ? cpu_addrbus_out : 23'bzzzzzzzzzzzzzzzzzzzzzzz;
+	assign cpu_addrbus = 23'bzzzzzzzzzzzzzzzzzzzzzzz;
 
 
 	reg [15:0] dataout;
@@ -123,10 +139,10 @@ module bus_ctrl(
 	
 	
 	// timer0
-	assign timer0_rst_int_n = ~((cpu_addrbus[19:1] == 19'h0) & ~wrh_fpga_n);
+	//assign timer0_rst_int_n = ~((cpu_addrbus[19:1] == 19'h0) & ~wrh_fpga_n);
 	
 	// timer1
-	assign timer1_rst_int_n = ~((cpu_addrbus[19:1] == 19'h2) & ~wrh_fpga_n);
+	//assign timer1_rst_int_n = ~((cpu_addrbus[19:1] == 19'h2) & ~wrh_fpga_n);
 
 	// DS12887 RTC
 	assign rtc_rdh_n = ~((cpu_addrbus[19:7] == 13'h2) & ~rdh_fpga_n);
@@ -143,6 +159,11 @@ module bus_ctrl(
 	
 	// ADC
 	assign adc_wrh_n = ~((cpu_addrbus[19:1] == 19'h000C) & ~wrh_fpga_n);
+
+	// UART
+	assign uart_wrh_n = ~((cpu_addrbus[19:1] == 19'h0010) & ~wrh_fpga_n);
+	assign uart_rdh_n = ~((cpu_addrbus[19:1] == 19'h0010) & ~rdh_fpga_n);
+	assign uart_rdl_n = ~((cpu_addrbus[19:1] == 19'h0010) & ~rdl_fpga_n);
 	
 	// interrupt cycle flag
 	assign intr_cycle_n = ~(~as_n & (cpu_fc[2:0] == 3'b111));
@@ -150,22 +171,31 @@ module bus_ctrl(
 	
 	assign vpa_n = ~intr_cycle_n ? intr_vpa_n : 1;
 	assign dtack_n = ~intr_cycle_n ? intr_dtack_n : (
-	                  rtc_cs ? rtc_dtack_n : (
-					 ~as_n ? 0 : 1));
+                    rtc_cs ? rtc_dtack_n : (
+                    ~as_n ? 0 : 1));
+
+
+
+
+	// PCR write high
+	assign wrh_pcr_n = ~((cpu_addrbus[19:1] == 19'h0) & ~wrh_fpga_n);
+	// reset t0 int
+	assign timer0_rst_int_n = ~(~wrh_pcr_n & cpu_databus[8]);
 	
+
 
 	always @(posedge sysclk or negedge rst_n)
 		if (!rst_n) begin
 			as_n_r <= 1'h1;
 			dataout[15:0] <= 16'hFFFF;
 			
-			timer0_ctrl_in[7:0] <= 8'h00;
-			timer0_preset[23:0] <= 24'h123456;
+			//timer0_ctrl_in[7:0] <= 8'h00;
+			timer0_preset[15:0] <= 16'h1234;
 
-			timer1_ctrl_in[7:0] <= 8'h00;
-			timer1_preset[23:0] <= 24'h234567;
+			/*timer1_ctrl_in[7:0] <= 8'h00;
+			timer1_preset[23:0] <= 24'h234567;*/	 
 			
-			rtc_datain[15:0] <= 16'h0000;
+			rtc_datain[7:0] <= 8'h00;
 			
 			intr_ctrl_in[15:0] <= 3'b000;
 			
@@ -173,36 +203,29 @@ module bus_ctrl(
 			sd_datain[15:0] <= 16'h0000;
 			adc_datain[15:0] <= 16'h0000;
 
+			pcr_ctrl[7:0] <= 8'h00;
+
 		end else begin
 			casex (cpu_addrbus[19:1])
-				// timer0 @ 0xF00000 ~ 0xF00007
+				// PCR register @ 0xF00000 ~ 0xF00001
 				19'h00000: begin
-					if (~wrh_fpga_n)
-						timer0_ctrl_in[7:0] <= cpu_databus[15:8];
+					/*if (~wrh_fpga_n)
+						pcr_ctrl[15:8] <= cpu_databus[15:8];*/
 					if (~wrl_fpga_n)
-						timer0_preset[23:16] <= cpu_databus[7:0];
-					if (~rdh_fpga_n)
-						dataout[15:8] <= timer0_ctrl_out[7:0];
+						pcr_ctrl[7:0] <= cpu_databus[7:0];
+					/*if (~rdh_fpga_n)
+						dataout[15:8] <= pcr_ctrl[15:8];*/
 					if (~rdl_fpga_n)
-						dataout[7:0] <= timer0_preset[23:16];
+						dataout[7:0] <= pcr_ctrl[7:0];
 				end
+
+			
+				// timer0 @ 0xF00002 ~ 0xF00003
 				19'h00001: begin
 					if (~wrh_fpga_n)
 						timer0_preset[15:8] <= cpu_databus[15:8];
 					if (~wrl_fpga_n)
 						timer0_preset[7:0] <= cpu_databus[7:0];
-					if (~rdh_fpga_n)
-						dataout[15:8] <= timer0_preset[15:8];
-					if (~rdl_fpga_n)
-						dataout[7:0] <= timer0_preset[7:0];
-				end
-				19'h00002: begin
-					if (~rdh_fpga_n)
-						dataout[15:8] <= 8'h00;
-					if (~rdl_fpga_n)
-						dataout[7:0] <= timer0_value[23:16];
-				end
-				19'h00003: begin
 					if (~rdh_fpga_n)
 						dataout[15:8] <= timer0_value[15:8];
 					if (~rdl_fpga_n)
@@ -210,7 +233,7 @@ module bus_ctrl(
 				end
 				
 				// timer1 @ 0xF00008 ~ 0xF0000F
-				19'h00004: begin
+				/*19'h00004: begin
 					if (~wrh_fpga_n)
 						timer1_ctrl_in[7:0] <= cpu_databus[15:8];
 					if (~wrl_fpga_n)
@@ -241,10 +264,12 @@ module bus_ctrl(
 						dataout[15:8] <= timer1_value[15:8];
 					if (~rdl_fpga_n)
 						dataout[7:0] <= timer1_value[7:0];
-				end
+				end*/
+				
 
+				
 				// interrupt controller @ 0xF00010
-				19'h0008: begin
+				19'h00008: begin
 					if (~wrh_fpga_n)
 						intr_ctrl_in[15:8] <= cpu_databus[15:8];
 					if (~wrl_fpga_n)
@@ -254,9 +279,9 @@ module bus_ctrl(
 					if (~rdl_fpga_n)
 						dataout[7:0] <= intr_ctrl_out[7:0];
 				end
-
+				
 				// eth spi @ 0xF00014
-				19'h000A: begin
+				19'h0000A: begin
 					if (~wrh_fpga_n)
 						eth_datain[15:8] <= cpu_databus[15:8];
 					if (~wrl_fpga_n)
@@ -268,7 +293,7 @@ module bus_ctrl(
 				end
 
 				// sdcard spi @ 0xF00016
-				19'h000B: begin
+				19'h0000B: begin
 					if (~wrh_fpga_n)
 						sd_datain[15:8] <= cpu_databus[15:8];
 					if (~wrl_fpga_n)
@@ -280,7 +305,7 @@ module bus_ctrl(
 				end
 
 				// adc spi @ 0xF00018
-				19'h000C: begin
+				19'h0000C: begin
 					if (~wrh_fpga_n)
 						adc_datain[15:8] <= cpu_databus[15:8];
 					if (~wrl_fpga_n)
@@ -290,6 +315,20 @@ module bus_ctrl(
 					if (~rdl_fpga_n)
 						dataout[7:0] <= adc_dataout[7:0];
 				end
+
+
+				// uart controller @ 0xF00020
+				19'h00010: begin
+					if (~wrh_fpga_n)
+						uart_datain[7:0] <= cpu_databus[15:8];
+					if (~wrl_fpga_n)
+						uart_ctrlin[7:0] <= cpu_databus[7:0];
+					if (~rdh_fpga_n)
+						dataout[15:8] <= uart_dataout[7:0];
+					if (~rdl_fpga_n)
+						dataout[7:0] <= uart_ctrlout[7:0];
+				end
+
 				
 				// rtc @ 0xF00100
 				19'b0000000000010xxxxxx: begin
@@ -302,7 +341,6 @@ module bus_ctrl(
 					if (~rdl_fpga_n)
 						dataout[7:0] <= rtc_dataout[7:0];
 				end
-				
 
 				
 				/*

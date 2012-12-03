@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 /*
    RTC DS12887 controller module
    Author: ljalvs@gmail.com
@@ -162,7 +164,6 @@ module rtc_ctrl(
 				end
 				
 				RD1B2, RD2B2: begin
-					rd_n <= 1;
 					rtc_dtack_n <= rtc_state[2]; // 0 if RD1B1; 1 if RD2B1
 					if (~rtc_rdl_n)
 						rtc_dataout[7:0] <= ad[7:0];
@@ -172,12 +173,13 @@ module rtc_ctrl(
 				
 				// word read
 				RD2B3: begin
+					rd_n <= 1;
 					as <= 1;
 					ad_out[7:0] <= {cpu_addrbus[6:1], 1'b0};
 				end
 
 				RD2B5: begin
-					rd_n <= 1;
+					//rd_n <= 1;
 					rtc_dtack_n <= 0;
 					rtc_dataout[15:8] <= ad[7:0];
 				end
