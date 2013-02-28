@@ -6,6 +6,9 @@
 //
 `timescale 1ns / 1ps
 
+
+//`define TEST_MAS3507D
+
 module top(
 
 	// system
@@ -24,7 +27,6 @@ module top(
 	output wire eth_mosi,
 	output wire eth_cs_n,
 	output wire eth_sclk,
-
 
 	// sdcard interface
 	input wire sd_cd_n,
@@ -62,12 +64,12 @@ module top(
 
 	// cpu interface
 	input wire [2:0] cpu_fc,
-	inout wire [23:1] cpu_addrbus,
+	input wire [23:1] cpu_addrbus,
 	inout wire [15:0] cpu_databus,
 	output wire [2:0] ipl_n,
 	output wire berr_n,
 	output wire dtack_n,
-	inout wire as_n,
+	input wire as_n,
 	input wire wrh_n,
 	input wire wrl_n,
 	input wire rdh_n,
@@ -77,8 +79,7 @@ module top(
 	output wire br_n,
 	input wire bg_n,
 	output wire bgack_n,
-	
-	
+		
 	
 	// cpld interface
 	input wire fpga_cs_n,
@@ -91,7 +92,7 @@ module top(
 
 	// I2C interface
 	inout wire sda,
-	output wire sck,
+	inout wire sck,
 	
 	// UART interface
 	input wire uart_rx,
@@ -101,37 +102,44 @@ module top(
 	// general purpose clock 
 	output wire gp_clk,
 	// general purpose IO1
-	output wire [17:1] gpio1,
+	output wire [17:4] gpio1,
 	// general purpose IO1 3.3V
 	output wire [4:1] gpio1_3v3,
 	// general purpose IO2
-	output wire [15:0] gpio2
+	output wire [15:0] gpio2,
+
+   // red led (error led during fpga config)
+	output red_led,
+
+/*	`ifdef TEST_MAS3507D*/
+	output wire mas_sclk,
+	output wire mas_mosi,
+	input wire mas_busy
+/*	`endif */
+
 	);
-	
+
+
+	/* unused signals */
+	assign br_n = 1;
+	assign bgack_n = 1;
+	assign berr_n = 1;
+
 	
 	// fpga in control generation
-	always @(posedge mclk or negedge rst_n)
+	always @(posedge cpuclk or negedge rst_n)
 		if (!rst_n)
 			fpga_inctrl_n <= 1;
 		else
 			fpga_inctrl_n <= 0;
 	
 
-	// 1MHz clock generation
-	reg [3:0] clk_cnt;
-	reg clk1;
-	always @(posedge cpuclk or negedge rst_n)
-		if (!rst_n) begin
-			clk_cnt[3:0] <= 4'd9;
-			clk1 <= 0;
-		end else
-			if (~|(clk_cnt[3:0])) begin
-				clk1 <= ~clk1;
-				clk_cnt[3:0] <= 4'd9;
-			end else
-				clk_cnt[3:0] <= clk_cnt[3:0] - 4'h01;
 
-	assign gp_clk = clk1;
+
+	// 1MHz clock generation using cpu E clock
+	reg clk1;
+	always @(posedge cpuEclk)
+		clk1 <= ~clk1;
 	
 	// interrupt controller wires
 	wire [15:0] intr_ctrl_in, intr_ctrl_out;
@@ -162,22 +170,39 @@ module top(
 	// sdcard wires
 	wire [15:0] sd_dout, sd_din;
 	wire sd_wrh_n;
+	wire sd_cd_rst_int_n;
 
 	// adc wires
 	wire [15:0] adc_dout, adc_din;
 	wire adc_wrh_n;
 	
-	//UART wires
+	// UART wires
 	wire [7:0] uart_din, uart_dout;
 	wire [7:0] uart_ctrlin, uart_ctrlout;
 	wire uart_wrh_n, uart_rdh_n;
 	wire uart_int_n;
 
+	// I2C wires
+	wire [7:0] i2c_din, i2c_dout;
+	wire [7:0] i2c_ctrlin, i2c_ctrlout;
+	wire i2c_wrh_n, i2c_wrl_n, i2c_rdh_n;
+	wire i2c_int_n;
 
+
+	// MAS3507D wires
+	`ifdef TEST_MAS3507D
+	wire [15:0] mas_dout, mas_din;
+	wire mas_wrh_n;
+	`endif
+
+	/* Peripheral control register */
 	wire [7:0] pcr_ctrl;
 	assign t0_en = pcr_ctrl[0];
+	assign red_led = ~pcr_ctrl[7];
 	
 	bus_ctrl I0_bus_ctrl(
+		//.t(gp_clk),
+
 		.clk(cpuclk),
 		.sysclk(mclk),
 		.rst_n(rst_n),
@@ -235,6 +260,8 @@ module top(
 		.sd_datain(sd_din),
 		.sd_dataout(sd_dout),
 		.sd_wrh_n(sd_wrh_n),
+		.sd_cd_rst_int_n(sd_cd_rst_int_n),
+		.sd_cd_n(sd_cd_n),
 
 		// ADC spi
 		.adc_datain(adc_din),
@@ -247,18 +274,32 @@ module top(
 		.uart_ctrlin(uart_ctrlin),
 		.uart_ctrlout(uart_ctrlout),
 		.uart_wrh_n(uart_wrh_n),
-		.uart_rdh_n(uart_rdh_n)
+		.uart_rdh_n(uart_rdh_n),
 		
+		// I2C controller
+		.i2c_datain(i2c_din),
+		.i2c_dataout(i2c_dout),
+		.i2c_ctrlin(i2c_ctrlin),
+		.i2c_ctrlout(i2c_ctrlout),
+		.i2c_wrh_n(i2c_wrh_n),
+		.i2c_wrl_n(i2c_wrl_n),
+		.i2c_rdh_n(i2c_rdh_n)
+
+		`ifdef TEST_MAS3507D
+		,.mas_datain(mas_din),
+		.mas_dataout(mas_dout),
+		.mas_wrh_n(mas_wrh_n)
+		`endif
 		
 	);
 
 	intr_ctrl I0_intr_ctrl(
 		.clk(cpuclk),
-		.iclk(cpuclk),
+		//.iclk(cpuclk),
 		.rst_n(rst_n),
 	
 		.ipl_n(ipl_n),
-		.cpu_addrbus(cpu_addrbus[3:1]),
+		//.cpu_addrbus(cpu_addrbus[3:1]),
 		.dtack_n(intr_dtack_n),
 		.vpa_n(intr_vpa_n),
 		
@@ -276,8 +317,13 @@ module top(
 
 		.ftdi_rxf(ftdi_rxf),
 		.ftdi_txe(ftdi_txe),
-		
-		.uart_int_n(uart_int_n)
+`ifdef TEST_MAS3507D
+		.mas_int(mas_busy),
+`endif		
+		.uart_int_n(uart_int_n),
+
+		.sd_cd_n(sd_cd_n),
+		.sd_cd_rst_int_n(sd_cd_rst_int_n)
 	);
 
 	
@@ -406,17 +452,68 @@ module top(
 
 	);
 
+
+
+	i2c_ctrl I0_i2c(
+		.sysclk(mclk),
+		.clk(cpuclk),
+		.rst_n(rst_n),
+		
+		.datain(i2c_din),
+		.dataout(i2c_dout),
+		
+		.ctrl_in(i2c_ctrlin),
+		.ctrl_out(i2c_ctrlout),
+		
+		.data_wrh_n(i2c_wrh_n),
+		.data_wrl_n(i2c_wrl_n),
+		.data_rdh_n(i2c_rdh_n),
+		
+		.sda(sda),
+		.sck(sck),
+		
+		.i2c_int_n(i2c_int_n)
+
+	);
+
+
+	`ifdef TEST_MAS3507D
+	mas_ctrl I0_mas(
+		.clk(mclk),
+		.rst_n(rst_n),
+	
+		// cpu bus interface
+		.datain(mas_din),
+		.dataout(mas_dout),
+		.wr_n(mas_wrh_n),
+
+		// mas physical interface
+		.mosi(mas_mosi),
+		.busy(mas_busy),
+		.sclk(mas_sclk)
+	);
+	`endif
+
+
 	
 	// SD card busy LED tied to busy status bit
 	assign sd_busy_n = sd_cs_n; //uart_int_n;
+
+	/*assign gp_clk = sd_sclk;
+	assign gpio1[4] = sd_miso;
+	assign gpio1[5] = sd_mosi;
+	assign gpio1[6] = sd_cs_n;*/
 	
 	/*assign gpio1[1] = rtc_rdh_n;
 	assign gpio1[2] = rtc_dtack_n;*/
-	assign gpio1[2] = t0_int_n;
+	//assign gpio1[2] = t0_int_n;
 	/*assign gpio1[8] = uart_rdh_n;
 	assign gpio1[4] = uart_rdl_n;
 	assign gpio1[6] = uart_int_n;*/
 
 	//assign gpio1[4] = ovr;
+
+	// debug
+	//assign gp_clk = clk1;
 	
 endmodule
