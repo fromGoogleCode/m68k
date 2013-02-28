@@ -41,8 +41,8 @@ module gp_timer(
 
 	reg [15:0] counter;
 	wire [15:0] n_counter;
-	assign n_counter = counter[15:0] + 16'h1;
-	assign value = counter;
+	assign n_counter = counter[15:0] - 16'h1;
+	assign value[15:0] = preset[15:0] - counter[15:0];
 	
 	/*wire en = ctrl_in[0];*/
 	

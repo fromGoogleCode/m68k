@@ -372,9 +372,14 @@ NET "ftdi_rxf" LOC = "F17";
 NET "ftdi_txe" LOC = "F18";
 #NET "gpio1[0]" LOC = "E1";
 NET "uart_rx" LOC = "E1";
-NET "gpio1[1]" LOC = "F1";
-NET "gpio1[2]" LOC = "H2";
-NET "gpio1[3]" LOC = "G1";
+
+NET "mas_sclk" LOC = "F1";
+NET "mas_mosi" LOC = "H2";
+NET "mas_busy" LOC = "G1";
+#NET "gpio1[1]" LOC = "F1";
+#NET "gpio1[2]" LOC = "H2";
+#NET "gpio1[3]" LOC = "G1";
+
 NET "gpio1[4]" LOC = "J3";
 NET "gpio1[5]" LOC = "H1";
 NET "gpio1[6]" LOC = "J1";
@@ -451,3 +456,4 @@ NET "vpa_n" LOC = "T8";
 NET "wrh_n" LOC = "T3";
 NET "wrl_n" LOC = "V15";
 NET "as_n" PULLUP;
+NET "red_led" LOC = "J16";

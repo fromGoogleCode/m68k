@@ -3,12 +3,12 @@
 module intr_ctrl(
 	// system
 	input wire clk,
-	input wire iclk,
+//	input wire iclk,
 	input wire rst_n,
 	
 	// cpu signals
 	output reg [2:0] ipl_n,
-	input wire [3:1] cpu_addrbus,
+	//input wire [3:1] cpu_addrbus,
 	output reg dtack_n,
 	output reg vpa_n,
 	
@@ -26,53 +26,103 @@ module intr_ctrl(
 	input wire rtc_int_n,
 	input wire eth_int_n,
 
+	`ifdef TEST_MAS3507D
+	input wire mas_int,
+	`endif
 
 	// for ftdi interrupt generator
 	input wire ftdi_rxf,
 	input wire ftdi_txe,
 	
-	input wire uart_int_n
+	input wire uart_int_n,
+
+	// SD card insert/remove int
+	input wire sd_cd_n,
+	input wire sd_cd_rst_int_n
 
 );
 
+	// loop back control register
+	assign ctrl_out = ctrl_in;
 
 
-	wire ftdi_ien, ftdi_rxie, ftdi_txie, eth_ien, uart_ien;
 
-	// control register assigns
-	// ftdi
+   /*******************************************/
+	/* SD card insertion/removal edge detector */
+	reg sd_cd_1, sd_cd_2; //, sd_cd_3;
+	always @(posedge clk) begin
+		sd_cd_1 <= ~sd_cd_n;
+		sd_cd_2 <= sd_cd_1;
+		//sd_cd_3 <= sd_cd_2;
+	end
+	//assign sd_cd = (sd_cd_2 & ~sd_cd_3) | (~sd_cd_2 & sd_cd_3);
+	assign sd_cd = (sd_cd_1 & ~sd_cd_2) | (~sd_cd_1 & sd_cd_2);
+
+	reg sd_cd_int_n;
+	/* SD card interrupt generator */
+	always @(posedge clk or negedge rst_n)
+		if (~rst_n) begin
+			sd_cd_int_n <= 1;
+		end else begin
+			if (~sd_cd_rst_int_n)
+				sd_cd_int_n <= 1;
+			else if (sd_cd)
+				sd_cd_int_n <= 0;
+		end
+	wire sd_cd_int_n_e;
+
+	assign sd_cd_ien = ctrl_in[6];
+	assign sd_cd_int_n_e = ~(~sd_cd_int_n & sd_cd_ien);
+   /*******************************************/
+
+	
+   /*******************************************/
+	/* ftdi interrupt generator                */
 	assign ftdi_ien  = ctrl_in[0];
 	assign ftdi_rxie = ctrl_in[1];
 	assign ftdi_txie = ctrl_in[2];
-	// eth
-	assign eth_ien   = ctrl_in[3];
-	
-	assign uart_ien = ctrl_in[4];
-	
-	assign ctrl_out = ctrl_in;
-	
-	
-	// ftdi interrupt generator
-	wire ftdi_int_n;
 	assign ftdi_int_n = ~(ftdi_ien & ((~ftdi_rxf & ftdi_rxie) | (~ftdi_txe & ftdi_txie)));
-	
+   /*******************************************/
 	
 
-	wire eth_int_n_e;
+   /*******************************************/
+	/* enc28j60                                */
+	assign eth_ien   = ctrl_in[3];
 	assign eth_int_n_e = ~(~eth_int_n & eth_ien);
+   /*******************************************/
 
-	wire uart_int_n_e;
+
+   /*******************************************/
+	/* fpga simple uart                        */
+	assign uart_ien  = ctrl_in[4];
 	assign uart_int_n_e = ~(~uart_int_n & uart_ien);
+   /*******************************************/
 	
+
+   /*******************************************/
+	/* MAS3507D                                */
+	`ifdef TEST_MAS3507D
+	assign mas_ien = ctrl_in[5];
+	assign mas_int_n_e = ~(mas_int & mas_ien);
+	`endif
+   /*******************************************/
+
+
+
+	/* interuupt level assign */
 
 	wire [7:1] int_level;
 
-	assign int_level[1] = 0;//~timer1_int_n;
+	assign int_level[1] = ~sd_cd_int_n_e;//~timer1_int_n;
 	assign int_level[2] = 0;
 	assign int_level[3] = ~ftdi_int_n;
 	assign int_level[4] = ~uart_int_n_e;
 	assign int_level[5] = ~eth_int_n_e;
-	assign int_level[6] = ~timer0_int_n | ~rtc_int_n;
+	assign int_level[6] = ~timer0_int_n | ~rtc_int_n
+`ifdef TEST_MAS3507D
+	| ~mas_int_n_e
+`endif
+;
 	assign int_level[7] = ~int7_n;
 	
 	
@@ -118,12 +168,20 @@ module intr_ctrl(
 	// vector = 00 will trigger autovector
 	assign intr_vector = ~int7_n       ? 8'h00 : (
 						 ~timer0_int_n ? 8'h40 : (
+`ifdef TEST_MAS3507D							
+						 ~mas_int_n_e  ? 8'h53 : (
+`endif
 						 ~rtc_int_n    ? 8'h50 : (
 						 ~eth_int_n_e  ? 8'h51 : (
 						 ~uart_int_n_e ? 8'h52 : (
-						 ~ftdi_int_n   ? 8'h44 : /*(
+						 ~ftdi_int_n   ? 8'h44 : (
+						 ~sd_cd_int_n_e? 8'h42 : /*(
 						 ~timer1_int_n ? 8'h41 : */
-						 8'h00 ))))); //);
+						 8'h00 ))))
+`ifdef TEST_MAS3507D						 
+						 )
+`endif
+						 )); //);
 
 	parameter IDLE = 2'b00;
 	parameter AVEC_INT = 2'b01;

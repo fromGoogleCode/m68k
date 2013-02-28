@@ -27,13 +27,7 @@ module uart_ctrl(
 
 
 
-
-
-
-
 	reg [7:0] rx_reg;
-
-
 	
 	
 	reg prev;
@@ -86,13 +80,10 @@ module uart_ctrl(
 				rd_pt <= rd_pt + 4'h1;
 			end
 			
-			
 			if (rx_done & ~rd_n_l & ~full)
 				cnt <= cnt + 5'h1;
 			else if (rd_n_l & ~rx_done & ~empty)
 				cnt <= cnt - 5'h1;
-			
-			
 				
 		end
 	
@@ -134,8 +125,6 @@ module uart_ctrl(
 	reg rx_busy;
 	reg [3:0] rx_count16;
 	reg [3:0] rx_bitcount;
-	
-	
 	
 
 	always @(posedge clk) begin

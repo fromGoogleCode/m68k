@@ -1,5 +1,7 @@
 `timescale 1ns / 1ps
 
+/* `undef TEST_MAS3507D */
+
 module bus_ctrl(
 
 	input wire clk,
@@ -11,7 +13,7 @@ module bus_ctrl(
 	input wire wrl_n,
 	input wire wrh_n,
 
-	inout wire as_n,
+	input wire as_n,
 
 	input wire fpga_cs_n,
 	
@@ -29,7 +31,7 @@ module bus_ctrl(
 	output wire dtack_n,
 	
 	
-	inout wire [23:1] cpu_addrbus,
+	input wire [23:1] cpu_addrbus,
 	inout wire [15:0] cpu_databus,
 	input wire [2:0] cpu_fc,
 	
@@ -69,6 +71,8 @@ module bus_ctrl(
 	output reg [15:0] sd_datain,
 	input wire [15:0] sd_dataout,
 	output wire sd_wrh_n,
+	output wire sd_cd_rst_int_n,
+	input wire sd_cd_n,
 
 	// ADC
 	output reg [15:0] adc_datain,
@@ -84,27 +88,26 @@ module bus_ctrl(
 	
 	output wire uart_wrh_n,
 	output wire uart_rdh_n,
-	output wire uart_rdl_n
+
+	// I2C
+	output reg [7:0] i2c_datain,
+	input wire [7:0] i2c_dataout,
+	output reg [7:0] i2c_ctrlin,
+	input wire [7:0] i2c_ctrlout,
+
+	output wire i2c_wrh_n,
+	output wire i2c_wrl_n,
+	output wire i2c_rdh_n
+
+	// MAS3507D
+	`ifdef TEST_MAS3507D
+	output reg [15:0] mas_datain,
+	input wire [15:0] mas_dataout,
+	output wire mas_wrh_n,
+	`endif
 	
+
 );
-
-/*
-	reg as_n_d0, as_n_d;
-	
-	always @(posedge clk or negedge rst_n)
-		if (!rst_n) begin
-			as_n_d <= 1;
-			as_n_d0 <= 1;
-		end else begin 
-			as_n_d0 <= as_n;
-			as_n_d  <= as_n_d0;
-		end
-*/
-		
-
-	// no fpga control for now
-	wire fpga_busmaster;
-	assign fpga_busmaster = 0;
 
 
 	wire rdl_fpga_n, rdh_fpga_n;
@@ -115,14 +118,6 @@ module bus_ctrl(
 	assign wrl_fpga_n = ~(~wrl_n & ~fpga_cs_n);
 	assign wrh_fpga_n = ~(~wrh_n & ~fpga_cs_n);
 	
-	
-	reg as_n_r;
-	assign as_n = fpga_busmaster ? as_n_r : 1'bz;
-	assign as_n = 1'bz;
-
-	//reg [23:1] cpu_addrbus_out;
-	//assign cpu_addrbus = fpga_busmaster ? cpu_addrbus_out : 23'bzzzzzzzzzzzzzzzzzzzzzzz;
-	assign cpu_addrbus = 23'bzzzzzzzzzzzzzzzzzzzzzzz;
 
 
 	reg [15:0] dataout;
@@ -131,13 +126,7 @@ module bus_ctrl(
 	assign cpu_databus[7:0] = ~intr_cycle_n ? intr_vector[7:0] : (~rdl_fpga_n ? dataout[7:0] : 8'hzz);
 	
 
-	//wire activity_rd;
-	//wire activity_wr;
-	//assign activity_rd = (~rdl_fpga_n | ~rdh_fpga_n);
-	//assign activity_wr = (~wrl_fpga_n | ~wrh_fpga_n);
-	
-	
-	
+
 	// timer0
 	//assign timer0_rst_int_n = ~((cpu_addrbus[19:1] == 19'h0) & ~wrh_fpga_n);
 	
@@ -163,8 +152,20 @@ module bus_ctrl(
 	// UART
 	assign uart_wrh_n = ~((cpu_addrbus[19:1] == 19'h0010) & ~wrh_fpga_n);
 	assign uart_rdh_n = ~((cpu_addrbus[19:1] == 19'h0010) & ~rdh_fpga_n);
-	assign uart_rdl_n = ~((cpu_addrbus[19:1] == 19'h0010) & ~rdl_fpga_n);
-	
+	//assign uart_rdl_n = ~((cpu_addrbus[19:1] == 19'h0010) & ~rdl_fpga_n);
+
+	// I2C
+	assign i2c_wrh_n = ~((cpu_addrbus[19:1] == 19'h0018) & ~wrh_fpga_n);
+	assign i2c_wrl_n = ~((cpu_addrbus[19:1] == 19'h0018) & ~wrl_fpga_n);
+	assign i2c_rdh_n = ~((cpu_addrbus[19:1] == 19'h0018) & ~rdh_fpga_n);
+
+
+	// MAS3507D
+	`ifdef TEST_MAS3507D
+	assign mas_wrh_n = ~((cpu_addrbus[19:1] == 19'h0019) & ~wrh_fpga_n);
+   `endif
+
+
 	// interrupt cycle flag
 	assign intr_cycle_n = ~(~as_n & (cpu_fc[2:0] == 3'b111));
 	
@@ -181,29 +182,34 @@ module bus_ctrl(
 	assign wrh_pcr_n = ~((cpu_addrbus[19:1] == 19'h0) & ~wrh_fpga_n);
 	// reset t0 int
 	assign timer0_rst_int_n = ~(~wrh_pcr_n & cpu_databus[8]);
-	
+	// reset card detect int
+	assign sd_cd_rst_int_n  = ~(~wrh_pcr_n & cpu_databus[9]);
 
 
+
+
+	/* address decoder */
 	always @(posedge sysclk or negedge rst_n)
 		if (!rst_n) begin
-			as_n_r <= 1'h1;
 			dataout[15:0] <= 16'hFFFF;
 			
 			//timer0_ctrl_in[7:0] <= 8'h00;
-			timer0_preset[15:0] <= 16'h1234;
+			timer0_preset[15:0] <= 16'h0000;
 
 			/*timer1_ctrl_in[7:0] <= 8'h00;
 			timer1_preset[23:0] <= 24'h234567;*/	 
 			
-			rtc_datain[7:0] <= 8'h00;
+			rtc_datain[15:0]   <= 16'h0000;
+			intr_ctrl_in[15:0] <= 16'h0000;
+			eth_datain[15:0]   <= 16'h0000;
+			sd_datain[15:0]    <= 16'h0000;
+			adc_datain[15:0]   <= 16'h0000;
 			
-			intr_ctrl_in[15:0] <= 3'b000;
-			
-			eth_datain[15:0] <= 16'h0000;
-			sd_datain[15:0] <= 16'h0000;
-			adc_datain[15:0] <= 16'h0000;
-
-			pcr_ctrl[7:0] <= 8'h00;
+			uart_datain[7:0] <= 8'h00;
+			uart_ctrlin[7:0] <= 8'h00;
+			pcr_ctrl[7:0]    <= 8'h00;
+			i2c_datain[7:0]  <= 8'h00;
+			i2c_ctrlin[7:0]  <= 8'h00;
 
 		end else begin
 			casex (cpu_addrbus[19:1])
@@ -301,7 +307,7 @@ module bus_ctrl(
 					if (~rdh_fpga_n)
 						dataout[15:8] <= sd_dataout[15:8];
 					if (~rdl_fpga_n)
-						dataout[7:0] <= sd_dataout[7:0];
+						dataout[7:0] <= {sd_dataout[7], sd_cd_n, sd_dataout[5:0]};
 				end
 
 				// adc spi @ 0xF00018
@@ -329,6 +335,31 @@ module bus_ctrl(
 						dataout[7:0] <= uart_ctrlout[7:0];
 				end
 
+				// i2c controller @ 0xF00030
+				19'h00018: begin
+					if (~wrh_fpga_n)
+						i2c_datain[7:0] <= cpu_databus[15:8];
+					if (~wrl_fpga_n)
+						i2c_ctrlin[7:0] <= cpu_databus[7:0];
+					if (~rdh_fpga_n)
+						dataout[15:8] <= i2c_dataout[7:0];
+					if (~rdl_fpga_n)
+						dataout[7:0] <= i2c_ctrlout[7:0];
+				end
+
+				// mas3507d controller @ 0xF00032
+				`ifdef TEST_MAS3507D
+				19'h00019: begin
+					if (~wrh_fpga_n)
+						mas_datain[15:8] <= cpu_databus[15:8];
+					if (~wrl_fpga_n)
+						mas_datain[7:0] <= cpu_databus[7:0];
+					if (~rdh_fpga_n)
+						dataout[15:8] <= mas_dataout[15:8];
+					if (~rdl_fpga_n)
+						dataout[7:0] <= mas_dataout[7:0];
+				end
+				`endif
 				
 				// rtc @ 0xF00100
 				19'b0000000000010xxxxxx: begin
@@ -343,53 +374,50 @@ module bus_ctrl(
 				end
 
 				
+				
 				/*
-				
-				
-				
-				// 
 				19'h0040: begin
 					if (~wrh_fpga_n)
-						z[31:24] <= cpu_databus[15:8];
+						dma_src_addr[31:24] <= cpu_databus[15:8];
 					if (~wrl_fpga_n)
-						z[23:16] <= cpu_databus[7:0];
+						dma_src_addr[23:16] <= cpu_databus[7:0];
 					if (~rdh_fpga_n)
-						dataout[15:8] <= z[31:24];
+						dataout[15:8] <= dma_src_addr[31:24];
 					if (~rdl_fpga_n)
-						dataout[7:0] <= z[23:16];
+						dataout[7:0] <= dma_src_addr[23:16];
 				end
 				19'h0041: begin
 					if (~wrh_fpga_n)
-						z[15:8] <= cpu_databus[15:8];
+						dma_src_addr[15:8] <= cpu_databus[15:8];
 					if (~wrl_fpga_n)
-						z[7:0] <= cpu_databus[7:0];
+						dma_src_addr[7:0] <= cpu_databus[7:0];
 					if (~rdh_fpga_n)
-						dataout[15:8] <= z[15:8];
+						dataout[15:8] <= dma_src_addr[15:8];
 					if (~rdl_fpga_n)
-						dataout[7:0] <= z[7:0];
+						dataout[7:0] <= dma_src_addr[7:0];
 				end
 
 				19'h0042: begin
 					if (~wrh_fpga_n)
-						d[31:24] <= cpu_databus[15:8];
+						dma_dst_addr[31:24] <= cpu_databus[15:8];
 					if (~wrl_fpga_n)
-						d[23:16] <= cpu_databus[7:0];
+						dma_dst_addr[23:16] <= cpu_databus[7:0];
 					if (~rdh_fpga_n)
-						dataout[15:8] <= d[31:24];
+						dataout[15:8] <= dma_dst_addr[31:24];
 					if (~rdl_fpga_n)
-						dataout[7:0] <= d[23:16];
+						dataout[7:0] <= dma_dst_addr[23:16];
 				end
 				19'h0043: begin
 					if (~wrh_fpga_n)
-						d[15:8] <= cpu_databus[15:8];
+						dma_dst_addr[15:8] <= cpu_databus[15:8];
 					if (~wrl_fpga_n)
-						d[7:0] <= cpu_databus[7:0];
+						dma_dst_addr[7:0] <= cpu_databus[7:0];
 					if (~rdh_fpga_n)
-						dataout[15:8] <= d[15:8];
+						dataout[15:8] <= dma_dst_addr[15:8];
 					if (~rdl_fpga_n)
-						dataout[7:0] <= d[7:0];
+						dataout[7:0] <= dma_dst_addr[7:0];
 				end
-
+			
 				19'h0044: begin
 					if (~rdh_fpga_n)
 						dataout[15:8] <= q[31:24];
